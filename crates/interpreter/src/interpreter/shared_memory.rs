@@ -1,11 +1,11 @@
 use revm_primitives::{B256, U256};
 
-use crate::alloc::vec::Vec;
 use core::{
     cmp::min,
     fmt,
     ops::{BitAnd, Not},
 };
+use std::vec::Vec;
 
 /// A sequential memory shared between calls, which uses
 /// a `Vec` for internal representation.
@@ -21,7 +21,7 @@ pub struct SharedMemory {
     checkpoints: Vec<usize>,
     /// Invariant: equals `self.checkpoints.last()`
     last_checkpoint: usize,
-    /// Memory limit. See [`crate::CfgEnv`].
+    /// Memory limit. See [`CfgEnv`](revm_primitives::CfgEnv).
     #[cfg(feature = "memory_limit")]
     memory_limit: u64,
 }

@@ -1,6 +1,6 @@
 use crate::{Address, Bytes, Log, State, U256};
-use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
+use std::{boxed::Box, string::String, vec::Vec};
 
 /// Result of EVM execution.
 pub type EVMResult<DBError> = EVMResultGeneric<ResultAndState, DBError>;
@@ -23,7 +23,7 @@ pub struct ResultAndState {
 pub enum ExecutionResult {
     /// Returned successfully
     Success {
-        reason: Eval,
+        reason: SuccessReason,
         gas_used: u64,
         gas_refunded: u64,
         logs: Vec<Log>,
@@ -33,7 +33,7 @@ pub enum ExecutionResult {
     Revert { gas_used: u64, output: Bytes },
     /// Reverted for various reasons and spend all gas.
     Halt {
-        reason: Halt,
+        reason: HaltReason,
         /// Halting will spend all the gas, and will be equal to gas_limit.
         gas_used: u64,
     },
@@ -135,6 +135,10 @@ pub enum EVMError<DBError> {
     Header(InvalidHeader),
     /// Database error.
     Database(DBError),
+    /// Custom error.
+    ///
+    /// Useful for handler registers where custom logic would want to return their own custom error.
+    Custom(String),
 }
 
 #[cfg(feature = "std")]
@@ -146,6 +150,7 @@ impl<DBError: fmt::Display> fmt::Display for EVMError<DBError> {
             EVMError::Transaction(e) => write!(f, "Transaction error: {e:?}"),
             EVMError::Header(e) => write!(f, "Header error: {e:?}"),
             EVMError::Database(e) => write!(f, "Database error: {e}"),
+            EVMError::Custom(e) => write!(f, "Custom error: {e}"),
         }
     }
 }
@@ -223,28 +228,28 @@ pub enum InvalidTransaction {
     /// was deprecated in the Regolith hardfork, and this error is thrown if a `Deposit` transaction
     /// is found with this field set to `true` after the hardfork activation.
     ///
-    /// In addition, this error is internal, and bubbles up into a [Halt::FailedDeposit] error
+    /// In addition, this error is internal, and bubbles up into a [HaltReason::FailedDeposit] error
     /// in the `revm` handler for the consumer to easily handle. This is due to a state transition
     /// rule on OP Stack chains where, if for any reason a deposit transaction fails, the transaction
     /// must still be included in the block, the sender nonce is bumped, the `mint` value persists, and
     /// special gas accounting rules are applied. Normally on L1, [EVMError::Transaction] errors
-    /// are cause for non-inclusion, so a special [Halt] variant was introduced to handle this
+    /// are cause for non-inclusion, so a special [HaltReason] variant was introduced to handle this
     /// case for failed deposit transactions.
     #[cfg(feature = "optimism")]
     DepositSystemTxPostRegolith,
     /// Deposit transaction haults bubble up to the global main return handler, wiping state and
     /// only increasing the nonce + persisting the mint value.
     ///
-    /// This is a catch-all error for any deposit transaction that is results in a [Halt] error
+    /// This is a catch-all error for any deposit transaction that is results in a [HaltReason] error
     /// post-regolith hardfork. This allows for a consumer to easily handle special cases where
     /// a deposit transaction fails during validation, but must still be included in the block.
     ///
-    /// In addition, this error is internal, and bubbles up into a [Halt::FailedDeposit] error
+    /// In addition, this error is internal, and bubbles up into a [HaltReason::FailedDeposit] error
     /// in the `revm` handler for the consumer to easily handle. This is due to a state transition
     /// rule on OP Stack chains where, if for any reason a deposit transaction fails, the transaction
     /// must still be included in the block, the sender nonce is bumped, the `mint` value persists, and
     /// special gas accounting rules are applied. Normally on L1, [EVMError::Transaction] errors
-    /// are cause for non-inclusion, so a special [Halt] variant was introduced to handle this
+    /// are cause for non-inclusion, so a special [HaltReason] variant was introduced to handle this
     /// case for failed deposit transactions.
     #[cfg(feature = "optimism")]
     HaltedDepositPostRegolith,
@@ -355,7 +360,7 @@ impl fmt::Display for InvalidHeader {
 /// Reason a transaction successfully completed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Eval {
+pub enum SuccessReason {
     Stop,
     Return,
     SelfDestruct,
@@ -365,7 +370,7 @@ pub enum Eval {
 /// immediately end with all gas being consumed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Halt {
+pub enum HaltReason {
     OutOfGas(OutOfGasError),
     OpcodeNotFound,
     InvalidFEOpcode,
@@ -388,7 +393,7 @@ pub enum Halt {
     OverflowPayment,
     StateChangeDuringStaticCall,
     CallNotAllowedInsideStatic,
-    OutOfFund,
+    OutOfFunds,
     CallTooDeep,
 
     /* Optimism errors */
@@ -400,7 +405,7 @@ pub enum Halt {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OutOfGasError {
     // Basic OOG error
-    BasicOutOfGas,
+    Basic,
     // Tried to expand past REVM limit
     MemoryLimit,
     // Basic OOG error from memory expansion
