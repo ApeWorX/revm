@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.1.0](https://github.com/ApeWorX/revm/compare/revm-precompile-v6.0.0...revm-precompile-v6.1.0) - 2024-04-30
+
+### Added
+- add flag to force hashbrown usage ([#1284](https://github.com/ApeWorX/revm/pull/1284))
+- EOF (Ethereum Object Format) ([#1143](https://github.com/ApeWorX/revm/pull/1143))
+
+### Other
+- *(deps)* bump aurora-engine-modexp from 1.0.0 to 1.1.0 ([#1339](https://github.com/ApeWorX/revm/pull/1339))
+- *(deps)* bump secp256k1 from 0.28.2 to 0.29.0 ([#1260](https://github.com/ApeWorX/revm/pull/1260))
+
 ## [6.0.0](https://github.com/bluealloy/revm/compare/revm-precompile-v5.1.0...revm-precompile-v6.0.0) - 2024-04-02
 
 ### Fixed
