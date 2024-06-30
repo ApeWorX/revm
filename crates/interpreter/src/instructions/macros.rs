@@ -37,8 +37,10 @@ macro_rules! require_init_eof {
 #[macro_export]
 macro_rules! check {
     ($interp:expr, $min:ident) => {
-        // TODO: Force const-eval on the condition with a `const {}` block once they are stable
-        if !<SPEC as $crate::primitives::Spec>::enabled($crate::primitives::SpecId::$min) {
+        if const {
+            !<SPEC as $crate::primitives::Spec>::SPEC_ID
+                .is_enabled_in($crate::primitives::SpecId::$min)
+        } {
             $interp.instruction_result = $crate::InstructionResult::NotActivated;
             return;
         }
@@ -114,10 +116,10 @@ macro_rules! resize_memory {
 #[macro_export]
 macro_rules! pop_address {
     ($interp:expr, $x1:ident) => {
-        pop_address_ret!($interp, $x1, ())
+        $crate::pop_address_ret!($interp, $x1, ())
     };
     ($interp:expr, $x1:ident, $x2:ident) => {
-        pop_address_ret!($interp, $x1, $x2, ())
+        $crate::pop_address_ret!($interp, $x1, $x2, ())
     };
 }
 
@@ -165,7 +167,7 @@ macro_rules! pop {
         $crate::pop_ret!($interp, $x1, $x2, $x3, $x4, ())
     };
     ($interp:expr, $x1:ident, $x2:ident, $x3:ident, $x4:ident, $x5:ident) => {
-        pop_ret!($interp, $x1, $x2, $x3, $x4, $x5, ())
+        $crate::pop_ret!($interp, $x1, $x2, $x3, $x4, $x5, ())
     };
 }
 
@@ -206,7 +208,7 @@ macro_rules! pop_ret {
         let ($x1, $x2, $x3, $x4) = unsafe { $interp.stack.pop4_unsafe() };
     };
     ($interp:expr, $x1:ident, $x2:ident, $x3:ident, $x4:ident, $x5:ident, $ret:expr) => {
-        if $interp.stack.len() < 4 {
+        if $interp.stack.len() < 5 {
             $interp.instruction_result = $crate::InstructionResult::StackUnderflow;
             return $ret;
         }
@@ -276,14 +278,17 @@ macro_rules! push {
 /// Converts a `U256` value to a `u64`, saturating to `MAX` if the value is too large.
 #[macro_export]
 macro_rules! as_u64_saturated {
-    ($v:expr) => {{
-        let x: &[u64; 4] = $v.as_limbs();
-        if x[1] == 0 && x[2] == 0 && x[3] == 0 {
-            x[0]
-        } else {
-            u64::MAX
+    ($v:expr) => {
+        match $v.as_limbs() {
+            x => {
+                if (x[1] == 0) & (x[2] == 0) & (x[3] == 0) {
+                    x[0]
+                } else {
+                    u64::MAX
+                }
+            }
         }
-    }};
+    };
 }
 
 /// Converts a `U256` value to a `usize`, saturating to `MAX` if the value is too large.
@@ -328,16 +333,15 @@ macro_rules! as_usize_or_fail_ret {
         )
     };
 
-    ($interp:expr, $v:expr, $reason:expr, $ret:expr) => {{
-        let x = $v.as_limbs();
-        if x[1] != 0 || x[2] != 0 || x[3] != 0 {
-            $interp.instruction_result = $reason;
-            return $ret;
+    ($interp:expr, $v:expr, $reason:expr, $ret:expr) => {
+        match $v.as_limbs() {
+            x => {
+                if (x[0] > usize::MAX as u64) | (x[1] != 0) | (x[2] != 0) | (x[3] != 0) {
+                    $interp.instruction_result = $reason;
+                    return $ret;
+                }
+                x[0] as usize
+            }
         }
-        let Ok(val) = usize::try_from(x[0]) else {
-            $interp.instruction_result = $reason;
-            return $ret;
-        };
-        val
-    }};
+    };
 }

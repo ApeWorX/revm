@@ -1,8 +1,9 @@
 pub mod eof;
 pub mod legacy;
 
-pub use eof::Eof;
+pub use eof::{Eof, EOF_MAGIC, EOF_MAGIC_BYTES, EOF_MAGIC_HASH};
 pub use legacy::{JumpTable, LegacyAnalyzedBytecode};
+use std::sync::Arc;
 
 use crate::{keccak256, Bytes, B256, KECCAK_EMPTY};
 
@@ -15,7 +16,7 @@ pub enum Bytecode {
     /// The bytecode has been analyzed for valid jump destinations.
     LegacyAnalyzed(LegacyAnalyzedBytecode),
     /// Ethereum Object Format
-    Eof(Eof),
+    Eof(Arc<Eof>),
 }
 
 impl Default for Bytecode {
@@ -53,7 +54,7 @@ impl Bytecode {
 
     /// Return reference to the EOF if bytecode is EOF.
     #[inline]
-    pub const fn eof(&self) -> Option<&Eof> {
+    pub const fn eof(&self) -> Option<&Arc<Eof>> {
         match self {
             Self::Eof(eof) => Some(eof),
             _ => None,
@@ -110,6 +111,26 @@ impl Bytecode {
         !matches!(self, Self::LegacyRaw(_))
     }
 
+    /// Returns bytes
+    #[inline]
+    pub fn bytes(&self) -> Bytes {
+        match self {
+            Self::LegacyRaw(bytes) => bytes.clone(),
+            Self::LegacyAnalyzed(analyzed) => analyzed.bytecode().clone(),
+            Self::Eof(eof) => eof.raw().clone(),
+        }
+    }
+
+    /// Returns bytes slice
+    #[inline]
+    pub fn bytes_slice(&self) -> &[u8] {
+        match self {
+            Self::LegacyRaw(bytes) => bytes,
+            Self::LegacyAnalyzed(analyzed) => analyzed.bytecode(),
+            Self::Eof(eof) => eof.raw(),
+        }
+    }
+
     /// Returns a reference to the original bytecode.
     #[inline]
     pub fn original_bytes(&self) -> Bytes {
@@ -144,5 +165,29 @@ impl Bytecode {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn eof_arc_clone() {
+        let eof = Arc::new(Eof::default());
+        let bytecode = Bytecode::Eof(Arc::clone(&eof));
+
+        // Cloning the Bytecode should not clone the underlying Eof
+        let cloned_bytecode = bytecode.clone();
+        if let Bytecode::Eof(original_arc) = bytecode {
+            if let Bytecode::Eof(cloned_arc) = cloned_bytecode {
+                assert!(Arc::ptr_eq(&original_arc, &cloned_arc));
+            } else {
+                panic!("Cloned bytecode is not Eof");
+            }
+        } else {
+            panic!("Original bytecode is not Eof");
+        }
     }
 }

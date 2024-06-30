@@ -6,6 +6,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0](https://github.com/bluealloy/revm/compare/revm-interpreter-v5.0.0...revm-interpreter-v6.0.0) - 2024-06-20
+
+### Added
+- *(EOF)* Put EOF bytecode behind an Arc ([#1517](https://github.com/bluealloy/revm/pull/1517))
+- *(EOF)* EXTCODECOPY,EXTCODESIZE,EXTCODEHASH eof support ([#1504](https://github.com/bluealloy/revm/pull/1504))
+- add helpers for working with instruction tables ([#1493](https://github.com/bluealloy/revm/pull/1493))
+- *(EOF)* change oob behavior of RETURNDATALOAD and RETURNDATACOPY ([#1476](https://github.com/bluealloy/revm/pull/1476))
+- *(EOF)* EIP-7698 eof creation transaction ([#1467](https://github.com/bluealloy/revm/pull/1467))
+- adjust gas-costs for EIP-2935 BLOCKHASH ([#1422](https://github.com/bluealloy/revm/pull/1422))
+- add Opcode::modifies_memory back ([#1421](https://github.com/bluealloy/revm/pull/1421))
+- *(EOF)* Add CALLF/JUMPF stack checks ([#1417](https://github.com/bluealloy/revm/pull/1417))
+- *(EOF)* remove TXCREATE ([#1415](https://github.com/bluealloy/revm/pull/1415))
+
+### Fixed
+- *(eof)* fixture 2 tests ([#1550](https://github.com/bluealloy/revm/pull/1550))
+- *(eof)* output gas for eofcreate ([#1540](https://github.com/bluealloy/revm/pull/1540))
+- *(EOF)* set CallOrCreate result in EOFCREATE ([#1535](https://github.com/bluealloy/revm/pull/1535))
+- *(EOF)* target needed for EOFCREATE created address ([#1536](https://github.com/bluealloy/revm/pull/1536))
+- *(EOF)* ext*call return values ([#1515](https://github.com/bluealloy/revm/pull/1515))
+- *(EOF)* Remove redundunt ext call gas cost ([#1513](https://github.com/bluealloy/revm/pull/1513))
+- *(EOF)* add DATACOPY copy gas ([#1510](https://github.com/bluealloy/revm/pull/1510))
+- *(EOF)* extstaticcall make static ([#1508](https://github.com/bluealloy/revm/pull/1508))
+- *(EOF)* jumpf gas was changes ([#1507](https://github.com/bluealloy/revm/pull/1507))
+- *(EOF)* panic on empty input range, and continue exec after eofcreate ([#1477](https://github.com/bluealloy/revm/pull/1477))
+- *(eof)* EOFCREATE spend gas and apply 63/64 rule ([#1471](https://github.com/bluealloy/revm/pull/1471))
+- *(stack)* pop with five items was not correct ([#1472](https://github.com/bluealloy/revm/pull/1472))
+- *(EOF)* returncontract immediate is one byte ([#1468](https://github.com/bluealloy/revm/pull/1468))
+- *(Interpreter)* wrong block number used ([#1458](https://github.com/bluealloy/revm/pull/1458))
+- *(interpreter)* avoid overflow when checking if mem limit reached ([#1429](https://github.com/bluealloy/revm/pull/1429))
+- blockchash for devnet-0  ([#1427](https://github.com/bluealloy/revm/pull/1427))
+
+### Other
+- replace TransactTo with TxKind ([#1542](https://github.com/bluealloy/revm/pull/1542))
+- simplify Interpreter serde ([#1544](https://github.com/bluealloy/revm/pull/1544))
+- *(interpreter)* use U256::arithmetic_shr in SAR ([#1525](https://github.com/bluealloy/revm/pull/1525))
+- pluralize EOFCreateInput ([#1523](https://github.com/bluealloy/revm/pull/1523))
+- added simular to used-by ([#1521](https://github.com/bluealloy/revm/pull/1521))
+- Removed .clone() in ExecutionHandler::call, and reusing output buffer in Interpreter ([#1512](https://github.com/bluealloy/revm/pull/1512))
+- *(revme)* add new line in revme EOF printer ([#1503](https://github.com/bluealloy/revm/pull/1503))
+- remove old deprecated items ([#1489](https://github.com/bluealloy/revm/pull/1489))
+- *(interpreter)* use max gas limit in `impl Default for Interpreter` ([#1478](https://github.com/bluealloy/revm/pull/1478))
+- *(interpreter)* optimisation for BYTE, SHL, SHR and SAR ([#1418](https://github.com/bluealloy/revm/pull/1418))
+- Revert "Revert "feat: implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))" ([#1424](https://github.com/bluealloy/revm/pull/1424))" ([#1426](https://github.com/bluealloy/revm/pull/1426))
+- Revert "feat: implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))" ([#1424](https://github.com/bluealloy/revm/pull/1424))
+- *(EOF)* rename extcall opcode/names ([#1416](https://github.com/bluealloy/revm/pull/1416))
+- point to gas! in Gas::record_cost ([#1413](https://github.com/bluealloy/revm/pull/1413))
+- pop_address should use crate scope ([#1410](https://github.com/bluealloy/revm/pull/1410))
+- Remove Host constrain from calc_call_gas ([#1409](https://github.com/bluealloy/revm/pull/1409))
+
+## [5.0.0](https://github.com/bluealloy/revm/compare/revm-interpreter-v4.0.0...revm-interpreter-v5.0.0) - 2024-05-12
+
+### Added
+- implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))
+- parse opcodes from strings ([#1358](https://github.com/bluealloy/revm/pull/1358))
+- *(interpreter)* add helpers for spending all gas ([#1360](https://github.com/bluealloy/revm/pull/1360))
+- add helper methods to CallInputs ([#1345](https://github.com/bluealloy/revm/pull/1345))
+- *(revm)* make `FrameOrResult` serializable ([#1282](https://github.com/bluealloy/revm/pull/1282))
+- add flag to force hashbrown usage ([#1284](https://github.com/bluealloy/revm/pull/1284))
+- EOF (Ethereum Object Format) ([#1143](https://github.com/bluealloy/revm/pull/1143))
+- *(interpreter)* derive Eq for InterpreterAction ([#1262](https://github.com/bluealloy/revm/pull/1262))
+- *(interpreter)* remove SPEC generic from gas calculation functions ([#1243](https://github.com/bluealloy/revm/pull/1243))
+- *(interpreter)* test Host object-safety, allow `dyn Host` in instructions ([#1245](https://github.com/bluealloy/revm/pull/1245))
+
+### Fixed
+- return the correct error in resize_memory ([#1359](https://github.com/bluealloy/revm/pull/1359))
+- correct some stack IO ([#1302](https://github.com/bluealloy/revm/pull/1302))
+
+### Other
+- add Trin to used by list ([#1393](https://github.com/bluealloy/revm/pull/1393))
+- refactor lints ([#1386](https://github.com/bluealloy/revm/pull/1386))
+- remove unused file ([#1379](https://github.com/bluealloy/revm/pull/1379))
+- *(interpreter)* branch less in as_usize_or_fail ([#1374](https://github.com/bluealloy/revm/pull/1374))
+- re-use num_words in gas::cost_per_word ([#1371](https://github.com/bluealloy/revm/pull/1371))
+- *(interpreter)* rewrite gas accounting for memory expansion ([#1361](https://github.com/bluealloy/revm/pull/1361))
+- remove bounds check in DUP, SWAP/EXCHANGE ([#1346](https://github.com/bluealloy/revm/pull/1346))
+- don't clone bytes in `Bytecode::bytes` ([#1344](https://github.com/bluealloy/revm/pull/1344))
+- shrink OpCodeInfo and add more methods ([#1307](https://github.com/bluealloy/revm/pull/1307))
+- *(interpreter)* rename some macros ([#1304](https://github.com/bluealloy/revm/pull/1304))
+- *(interpreter)* remove EOF branch in CODE{SIZE,COPY} ([#1308](https://github.com/bluealloy/revm/pull/1308))
+- fix some warnings ([#1305](https://github.com/bluealloy/revm/pull/1305))
+- *(interpreter)* rename wrapping_* opcodes ([#1306](https://github.com/bluealloy/revm/pull/1306))
+- Add the modifies_memory macro ([#1270](https://github.com/bluealloy/revm/pull/1270))
+- *(interpreter)* use `pop_top!` where possible ([#1267](https://github.com/bluealloy/revm/pull/1267))
+
 ## [4.0.0](https://github.com/bluealloy/revm/compare/revm-interpreter-v3.4.0...revm-interpreter-v4.0.0) - 2024-04-02
 
 ### Added

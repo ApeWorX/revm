@@ -6,6 +6,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0](https://github.com/bluealloy/revm/compare/revm-primitives-v4.0.0...revm-primitives-v5.0.0) - 2024-06-20
+
+### Added
+- *(EOF)* Put EOF bytecode behind an Arc ([#1517](https://github.com/bluealloy/revm/pull/1517))
+- *(EOF)* EXTCODECOPY,EXTCODESIZE,EXTCODEHASH eof support ([#1504](https://github.com/bluealloy/revm/pull/1504))
+- *(precompiles)* fatal error for precompiles ([#1499](https://github.com/bluealloy/revm/pull/1499))
+- Persist reverted account and storage slot lookups in `JournaledState` ([#1437](https://github.com/bluealloy/revm/pull/1437))
+- *(EOF)* EIP-7698 eof creation transaction ([#1467](https://github.com/bluealloy/revm/pull/1467))
+- *(optimism)* Add secp256r1 precompile for Fjord ([#1436](https://github.com/bluealloy/revm/pull/1436))
+- *(EOF)* Add CALLF/JUMPF stack checks ([#1417](https://github.com/bluealloy/revm/pull/1417))
+- *(EOF)* remove TXCREATE ([#1415](https://github.com/bluealloy/revm/pull/1415))
+
+### Fixed
+- *(eof)* fixture 2 tests ([#1550](https://github.com/bluealloy/revm/pull/1550))
+- *(primitives)* specify the optimism cfg on spec_to_generic ([#1412](https://github.com/bluealloy/revm/pull/1412))
+
+### Other
+- replace TransactTo with TxKind ([#1542](https://github.com/bluealloy/revm/pull/1542))
+- remove DatabaseWithDebugError ([#1545](https://github.com/bluealloy/revm/pull/1545))
+- avoid cloning precompiles ([#1486](https://github.com/bluealloy/revm/pull/1486))
+- added simular to used-by ([#1521](https://github.com/bluealloy/revm/pull/1521))
+- derive PartialEq and Hash on EnvKzgSettings ([#1494](https://github.com/bluealloy/revm/pull/1494))
+- remove old deprecated items ([#1489](https://github.com/bluealloy/revm/pull/1489))
+- *(primitives)* rename State/Storage to EvmState/EvmStorage ([#1459](https://github.com/bluealloy/revm/pull/1459))
+- Revert "Revert "feat: implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))" ([#1424](https://github.com/bluealloy/revm/pull/1424))" ([#1426](https://github.com/bluealloy/revm/pull/1426))
+- Revert "feat: implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))" ([#1424](https://github.com/bluealloy/revm/pull/1424))
+
+## [4.0.0](https://github.com/bluealloy/revm/compare/revm-primitives-v3.1.1...revm-primitives-v4.0.0) - 2024-05-12
+
+### Added
+- Add bytes to Bytecode ([#1396](https://github.com/bluealloy/revm/pull/1396))
+- implement EIP-2935 ([#1354](https://github.com/bluealloy/revm/pull/1354))
+- add `Bytecode::original_bytecode_slice` to match `BytecodeLocked` ([#1286](https://github.com/bluealloy/revm/pull/1286))
+- add flag to force hashbrown usage ([#1284](https://github.com/bluealloy/revm/pull/1284))
+- EOF (Ethereum Object Format) ([#1143](https://github.com/bluealloy/revm/pull/1143))
+- pass rand feature to alloy_primitives ([#1276](https://github.com/bluealloy/revm/pull/1276))
+- *(interpreter)* remove SPEC generic from gas calculation functions ([#1243](https://github.com/bluealloy/revm/pull/1243))
+
+### Other
+- add Trin to used by list ([#1393](https://github.com/bluealloy/revm/pull/1393))
+- bump c-kzg to 1.0.2 ([#1390](https://github.com/bluealloy/revm/pull/1390))
+- refactor lints ([#1386](https://github.com/bluealloy/revm/pull/1386))
+- add blob_count and max_blobs to `TooManyBlobs` err enum ([#1375](https://github.com/bluealloy/revm/pull/1375))
+- bump alloy & specify dep rev ([#1380](https://github.com/bluealloy/revm/pull/1380))
+- don't clone bytes in `Bytecode::bytes` ([#1344](https://github.com/bluealloy/revm/pull/1344))
+- shrink OpCodeInfo and add more methods ([#1307](https://github.com/bluealloy/revm/pull/1307))
+- Implement `with_chain_id` for `CfgEnv` ([#1327](https://github.com/bluealloy/revm/pull/1327))
+- *(interpreter)* remove EOF branch in CODE{SIZE,COPY} ([#1308](https://github.com/bluealloy/revm/pull/1308))
+- Update documentation ([#1275](https://github.com/bluealloy/revm/pull/1275))
+
 ## [3.1.1](https://github.com/bluealloy/revm/compare/revm-primitives-v3.1.0...revm-primitives-v3.1.1) - 2024-04-02
 
 ### Fixed

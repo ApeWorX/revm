@@ -5,7 +5,6 @@ use crate::{
     Host, InstructionResult, SStoreResult,
 };
 use core::cmp::min;
-use revm_primitives::BLOCK_HASH_HISTORY;
 use std::vec::Vec;
 
 pub fn balance<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {
@@ -100,26 +99,19 @@ pub fn extcodecopy<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, 
     // Note: this can't panic because we resized memory to fit.
     interpreter
         .shared_memory
-        .set_data(memory_offset, code_offset, len, &code.original_bytes());
+        .set_data(memory_offset, code_offset, len, &code);
 }
 
-pub fn blockhash<H: Host + ?Sized>(interpreter: &mut Interpreter, host: &mut H) {
+pub fn blockhash<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {
     gas!(interpreter, gas::BLOCKHASH);
     pop_top!(interpreter, number);
 
-    if let Some(diff) = host.env().block.number.checked_sub(*number) {
-        let diff = as_usize_saturated!(diff);
-        // blockhash should push zero if number is same as current block number.
-        if diff <= BLOCK_HASH_HISTORY && diff != 0 {
-            let Some(hash) = host.block_hash(*number) else {
-                interpreter.instruction_result = InstructionResult::FatalExternalError;
-                return;
-            };
-            *number = U256::from_be_bytes(hash.0);
-            return;
-        }
-    }
-    *number = U256::ZERO;
+    let number_u64 = as_u64_saturated!(number);
+    let Some(hash) = host.block_hash(number_u64) else {
+        interpreter.instruction_result = InstructionResult::FatalExternalError;
+        return;
+    };
+    *number = U256::from_be_bytes(hash.0);
 }
 
 pub fn sload<H: Host + ?Sized, SPEC: Spec>(interpreter: &mut Interpreter, host: &mut H) {

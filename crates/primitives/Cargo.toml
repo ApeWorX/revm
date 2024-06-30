@@ -6,18 +6,24 @@ keywords = ["no_std", "ethereum", "evm", "revm", "types"]
 license = "MIT"
 name = "revm-primitives"
 repository = "https://github.com/bluealloy/revm"
-version = "3.1.1"
+version = "5.0.0"
 readme = "../../README.md"
-
-# Don't need to run build script outside of this repo
-exclude = ["build.rs", "src/kzg/*.txt"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lints.rust]
+unreachable_pub = "warn"
+unused_must_use = "deny"
+rust_2018_idioms = "deny"
+
+[lints.rustdoc]
+all = "warn"
+
 [dependencies]
-alloy-primitives = { version = "0.7", default-features = false, features = [
+alloy-eips = { version = "0.1", default-features = false, features = ["k256"]}
+alloy-primitives = { version = "0.7.2", default-features = false, features = [
     "rlp",
 ] }
 hashbrown = "0.14"
@@ -26,7 +32,7 @@ bitvec = { version = "1", default-features = false, features = ["alloc"] }
 bitflags = { version = "2.5.0", default-features = false }
 
 # For setting the CfgEnv KZGSettings. Enabled by c-kzg flag.
-c-kzg = { version = "1.0.0", default-features = false, optional = true }
+c-kzg = { version = "1.0.2", default-features = false, optional = true }
 once_cell = { version = "1.19", default-features = false, optional = true }
 
 # utility
@@ -48,6 +54,7 @@ hex = { version = "0.4", default-features = false }
 default = ["std", "c-kzg", "portable"]
 std = [
     "serde?/std",
+    "alloy-eips/std",
     "alloy-primitives/std",
     "hex/std",
     "bitvec/std",
@@ -56,6 +63,7 @@ std = [
 hashbrown = []
 serde = [
     "dep:serde",
+    "alloy-eips/serde",
     "alloy-primitives/serde",
     "hex/serde",
     "hashbrown/serde",
@@ -63,7 +71,12 @@ serde = [
     "bitflags/serde",
     "c-kzg?/serde",
 ]
-arbitrary = ["std", "alloy-primitives/arbitrary", "bitflags/arbitrary"]
+arbitrary = [
+    "std",
+    "alloy-eips/arbitrary",
+    "alloy-primitives/arbitrary",
+    "bitflags/arbitrary"
+]
 asm-keccak = ["alloy-primitives/asm-keccak"]
 portable = ["c-kzg?/portable"]
 

@@ -1,9 +1,7 @@
 //! # revm-interpreter
 //!
 //! REVM Interpreter.
-#![warn(rustdoc::all)]
-#![warn(unreachable_pub, unused_crate_dependencies)]
-#![deny(unused_must_use, rust_2018_idioms)]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(not(feature = "std"))]
@@ -39,7 +37,7 @@ pub use interpreter::{
 };
 pub use interpreter_action::{
     CallInputs, CallOutcome, CallScheme, CallValue, CreateInputs, CreateOutcome, CreateScheme,
-    EOFCreateInput, EOFCreateOutcome, InterpreterAction,
+    EOFCreateInputs, EOFCreateKind, InterpreterAction,
 };
 pub use opcode::{Instruction, OpCode, OPCODE_INFO_JUMPTABLE};
 pub use primitives::{MAX_CODE_SIZE, MAX_INITCODE_SIZE};

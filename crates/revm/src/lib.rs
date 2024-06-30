@@ -1,8 +1,5 @@
-#![doc = "Revm is a Rust EVM implementation."]
-#![warn(rustdoc::all, unreachable_pub)]
-#![allow(rustdoc::bare_urls)]
+//! Revm is a Rust EVM implementation.
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[macro_use]
@@ -41,9 +38,7 @@ pub use db::{Database, DatabaseCommit, DatabaseRef, InMemoryDB};
 pub use evm::{Evm, CALL_STACK_LIMIT};
 pub use frame::{CallFrame, CreateFrame, Frame, FrameData, FrameOrResult, FrameResult};
 pub use handler::Handler;
-pub use inspector::{
-    inspector_handle_register, inspector_instruction, inspectors, GetInspector, Inspector,
-};
+pub use inspector::{inspector_handle_register, inspectors, GetInspector, Inspector};
 pub use journaled_state::{JournalCheckpoint, JournalEntry, JournaledState};
 // export Optimism types, helpers, and constants
 #[cfg(feature = "optimism")]

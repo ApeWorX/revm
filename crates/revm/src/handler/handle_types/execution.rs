@@ -5,15 +5,26 @@ use crate::{
     primitives::{db::Database, EVMError, Spec},
     CallFrame, Context, CreateFrame, Frame, FrameOrResult, FrameResult,
 };
-use std::{boxed::Box, sync::Arc};
-
 use revm_interpreter::{
-    CallOutcome, CreateOutcome, EOFCreateInput, EOFCreateOutcome, InterpreterResult,
+    opcode::InstructionTables, CallOutcome, CreateOutcome, EOFCreateInputs, InterpreterAction,
+    InterpreterResult,
 };
+use std::{boxed::Box, sync::Arc};
 
 /// Handles first frame return handle.
 pub type LastFrameReturnHandle<'a, EXT, DB> = Arc<
     dyn Fn(&mut Context<EXT, DB>, &mut FrameResult) -> Result<(), EVMError<<DB as Database>::Error>>
+        + 'a,
+>;
+
+/// Executes a single frame. Errors can be returned in the EVM context.
+pub type ExecuteFrameHandle<'a, EXT, DB> = Arc<
+    dyn Fn(
+            &mut Frame,
+            &mut SharedMemory,
+            &InstructionTables<'_, Context<EXT, DB>>,
+            &mut Context<EXT, DB>,
+        ) -> Result<InterpreterAction, EVMError<<DB as Database>::Error>>
         + 'a,
 >;
 
@@ -80,7 +91,7 @@ pub type InsertCreateOutcomeHandle<'a, EXT, DB> = Arc<
 pub type FrameEOFCreateHandle<'a, EXT, DB> = Arc<
     dyn Fn(
             &mut Context<EXT, DB>,
-            Box<EOFCreateInput>,
+            Box<EOFCreateInputs>,
         ) -> Result<FrameOrResult, EVMError<<DB as Database>::Error>>
         + 'a,
 >;
@@ -91,7 +102,7 @@ pub type FrameEOFCreateReturnHandle<'a, EXT, DB> = Arc<
             &mut Context<EXT, DB>,
             Box<EOFCreateFrame>,
             InterpreterResult,
-        ) -> Result<EOFCreateOutcome, EVMError<<DB as Database>::Error>>
+        ) -> Result<CreateOutcome, EVMError<<DB as Database>::Error>>
         + 'a,
 >;
 
@@ -100,7 +111,7 @@ pub type InsertEOFCreateOutcomeHandle<'a, EXT, DB> = Arc<
     dyn Fn(
             &mut Context<EXT, DB>,
             &mut Frame,
-            EOFCreateOutcome,
+            CreateOutcome,
         ) -> Result<(), EVMError<<DB as Database>::Error>>
         + 'a,
 >;
@@ -110,6 +121,8 @@ pub struct ExecutionHandler<'a, EXT, DB: Database> {
     /// Handles last frame return, modified gas for refund and
     /// sets tx gas limit.
     pub last_frame_return: LastFrameReturnHandle<'a, EXT, DB>,
+    /// Executes a single frame.
+    pub execute_frame: ExecuteFrameHandle<'a, EXT, DB>,
     /// Frame call
     pub call: FrameCallHandle<'a, EXT, DB>,
     /// Call return
@@ -135,6 +148,7 @@ impl<'a, EXT: 'a, DB: Database + 'a> ExecutionHandler<'a, EXT, DB> {
     pub fn new<SPEC: Spec + 'a>() -> Self {
         Self {
             last_frame_return: Arc::new(mainnet::last_frame_return::<SPEC, EXT, DB>),
+            execute_frame: Arc::new(mainnet::execute_frame::<SPEC, EXT, DB>),
             call: Arc::new(mainnet::call::<SPEC, EXT, DB>),
             call_return: Arc::new(mainnet::call_return::<EXT, DB>),
             insert_call_outcome: Arc::new(mainnet::insert_call_outcome),
@@ -149,6 +163,18 @@ impl<'a, EXT: 'a, DB: Database + 'a> ExecutionHandler<'a, EXT, DB> {
 }
 
 impl<'a, EXT, DB: Database> ExecutionHandler<'a, EXT, DB> {
+    /// Executes single frame.
+    #[inline]
+    pub fn execute_frame(
+        &self,
+        frame: &mut Frame,
+        shared_memory: &mut SharedMemory,
+        instruction_tables: &InstructionTables<'_, Context<EXT, DB>>,
+        context: &mut Context<EXT, DB>,
+    ) -> Result<InterpreterAction, EVMError<DB::Error>> {
+        (self.execute_frame)(frame, shared_memory, instruction_tables, context)
+    }
+
     /// Handle call return, depending on instruction result gas will be reimbursed or not.
     #[inline]
     pub fn last_frame_return(
@@ -166,7 +192,7 @@ impl<'a, EXT, DB: Database> ExecutionHandler<'a, EXT, DB> {
         context: &mut Context<EXT, DB>,
         inputs: Box<CallInputs>,
     ) -> Result<FrameOrResult, EVMError<DB::Error>> {
-        (self.call)(context, inputs.clone())
+        (self.call)(context, inputs)
     }
 
     /// Call registered handler for call return.
@@ -229,7 +255,7 @@ impl<'a, EXT, DB: Database> ExecutionHandler<'a, EXT, DB> {
     pub fn eofcreate(
         &self,
         context: &mut Context<EXT, DB>,
-        inputs: Box<EOFCreateInput>,
+        inputs: Box<EOFCreateInputs>,
     ) -> Result<FrameOrResult, EVMError<DB::Error>> {
         (self.eofcreate)(context, inputs)
     }
@@ -241,7 +267,7 @@ impl<'a, EXT, DB: Database> ExecutionHandler<'a, EXT, DB> {
         context: &mut Context<EXT, DB>,
         frame: Box<EOFCreateFrame>,
         interpreter_result: InterpreterResult,
-    ) -> Result<EOFCreateOutcome, EVMError<DB::Error>> {
+    ) -> Result<CreateOutcome, EVMError<DB::Error>> {
         (self.eofcreate_return)(context, frame, interpreter_result)
     }
 
@@ -251,7 +277,7 @@ impl<'a, EXT, DB: Database> ExecutionHandler<'a, EXT, DB> {
         &self,
         context: &mut Context<EXT, DB>,
         frame: &mut Frame,
-        outcome: EOFCreateOutcome,
+        outcome: CreateOutcome,
     ) -> Result<(), EVMError<DB::Error>> {
         (self.insert_eofcreate_outcome)(context, frame, outcome)
     }

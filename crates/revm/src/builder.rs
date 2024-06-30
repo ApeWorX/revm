@@ -15,7 +15,7 @@ use std::boxed::Box;
 pub struct EvmBuilder<'a, BuilderStage, EXT, DB: Database> {
     context: Context<EXT, DB>,
     /// Handler that will be used by EVM. It contains handle registers
-    handler: Handler<'a, Evm<'a, EXT, DB>, EXT, DB>,
+    handler: Handler<'a, Context<EXT, DB>, EXT, DB>,
     /// Phantom data to mark the stage of the builder.
     phantom: PhantomData<BuilderStage>,
 }
@@ -269,7 +269,7 @@ impl<'a, BuilderStage, EXT, DB: Database> EvmBuilder<'a, BuilderStage, EXT, DB> 
     /// Creates the default handler.
     ///
     /// This is useful for adding optimism handle register.
-    fn handler(handler_cfg: HandlerCfg) -> Handler<'a, Evm<'a, EXT, DB>, EXT, DB> {
+    fn handler(handler_cfg: HandlerCfg) -> Handler<'a, Context<EXT, DB>, EXT, DB> {
         Handler::new(handler_cfg)
     }
 
@@ -291,7 +291,7 @@ impl<'a, BuilderStage, EXT, DB: Database> EvmBuilder<'a, BuilderStage, EXT, DB> 
     /// ```
     pub fn with_handler(
         self,
-        handler: Handler<'a, Evm<'a, EXT, DB>, EXT, DB>,
+        handler: Handler<'a, Context<EXT, DB>, EXT, DB>,
     ) -> EvmBuilder<'a, BuilderStage, EXT, DB> {
         EvmBuilder {
             context: self.context,
@@ -444,11 +444,12 @@ mod test {
         inspector::inspector_handle_register,
         inspectors::NoOpInspector,
         primitives::{
-            address, AccountInfo, Address, Bytecode, Bytes, PrecompileResult, TransactTo, U256,
+            address, AccountInfo, Address, Bytecode, Bytes, PrecompileResult, TxKind, U256,
         },
         Context, ContextPrecompile, ContextStatefulPrecompile, Evm, InMemoryDB, InnerEvmContext,
     };
     use revm_interpreter::{gas, Host, Interpreter};
+    use revm_precompile::PrecompileOutput;
     use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     /// Custom evm context
@@ -473,7 +474,7 @@ mod test {
             .modify_db(|db| {
                 db.insert_account_info(to_addr, AccountInfo::new(U256::ZERO, 0, code_hash, code))
             })
-            .modify_tx_env(|tx| tx.transact_to = TransactTo::Call(to_addr))
+            .modify_tx_env(|tx| tx.transact_to = TxKind::Call(to_addr))
             // we need to use handle register box to capture the custom context in the handle
             // register
             .append_handler_register_box(Box::new(move |handler| {
@@ -481,22 +482,18 @@ mod test {
 
                 // we need to use a box to capture the custom context in the instruction
                 let custom_instruction = Box::new(
-                    move |_interp: &mut Interpreter, _host: &mut Evm<'_, (), InMemoryDB>| {
+                    move |_interp: &mut Interpreter, _host: &mut Context<(), InMemoryDB>| {
                         // modify the value
                         let mut inner = custom_context.inner.borrow_mut();
                         *inner += 1;
                     },
                 );
 
-                // need to make esure the instruction table is a boxed instruction table so that we
+                // need to  ensure the instruction table is a boxed instruction table so that we
                 // can insert the custom instruction as a boxed instruction
-                let mut table = handler.take_instruction_table();
-                table = table.map(|mut table| {
-                    // now we can finally insert
-                    table.insert_boxed(0xEF, custom_instruction);
-                    table
-                });
-                handler.instruction_table = table;
+                handler
+                    .instruction_table
+                    .insert_boxed(0xEF, custom_instruction);
             }))
             .build();
 
@@ -526,11 +523,9 @@ mod test {
             .modify_db(|db| {
                 db.insert_account_info(to_addr, AccountInfo::new(U256::ZERO, 0, code_hash, code))
             })
-            .modify_tx_env(|tx| tx.transact_to = TransactTo::Call(to_addr))
+            .modify_tx_env(|tx| tx.transact_to = TxKind::Call(to_addr))
             .append_handler_register(|handler| {
-                if let Some(ref mut table) = handler.instruction_table {
-                    table.insert(0xEF, custom_instruction)
-                }
+                handler.instruction_table.insert(0xEF, custom_instruction)
             })
             .build();
 
@@ -620,7 +615,7 @@ mod test {
                 _gas_price: u64,
                 _context: &mut InnerEvmContext<EmptyDB>,
             ) -> PrecompileResult {
-                Ok((10, Bytes::new()))
+                Ok(PrecompileOutput::new(10, Bytes::new()))
             }
         }
 

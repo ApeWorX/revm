@@ -9,8 +9,8 @@ use revm::{
     inspector_handle_register,
     inspectors::TracerEip3155,
     primitives::{
-        calc_excess_blob_gas, keccak256, Bytecode, Bytes, EVMResultGeneric, Env, ExecutionResult,
-        SpecId, TransactTo, B256, U256,
+        calc_excess_blob_gas, keccak256, Bytecode, Bytes, EVMResultGeneric, Env, Eof,
+        ExecutionResult, SpecId, TxKind, B256, EOF_MAGIC_BYTES,
     },
     Evm, State,
 };
@@ -104,6 +104,18 @@ fn skip_test(path: &Path) -> bool {
         | "basefeeExample.json"
         | "eip1559.json"
         | "mergeTest.json"
+
+        // Test with some storage check.
+        | "RevertInCreateInInit_Paris.json"
+        | "RevertInCreateInInit.json"
+        | "dynamicAccountOverwriteEmpty.json"
+        | "dynamicAccountOverwriteEmpty_Paris.json"
+        | "RevertInCreateInInitCreate2Paris.json"
+        | "create2collisionStorage.json"
+        | "RevertInCreateInInitCreate2.json"
+        | "create2collisionStorageParis.json"
+        | "InitCollision.json"
+        | "InitCollisionParis.json"
 
         // These tests are passing, but they take a lot of time to execute so we are going to skip them.
         | "loopExp.json"
@@ -245,10 +257,17 @@ pub fn execute_test_suite(
         // Create database and insert cache
         let mut cache_state = revm::CacheState::new(false);
         for (address, info) in unit.pre {
+            let code_hash = keccak256(&info.code);
+            let bytecode = match info.code.get(..2) {
+                Some(magic) if magic == &EOF_MAGIC_BYTES => {
+                    Bytecode::Eof(Eof::decode(info.code.clone()).unwrap().into())
+                }
+                _ => Bytecode::new_raw(info.code),
+            };
             let acc_info = revm::primitives::AccountInfo {
                 balance: info.balance,
-                code_hash: keccak256(&info.code),
-                code: Some(Bytecode::new_raw(info.code)),
+                code_hash,
+                code: Some(bytecode),
                 nonce: info.nonce,
             };
             cache_state.insert_account_with_storage(address, acc_info, info.storage);
@@ -331,22 +350,12 @@ pub fn execute_test_suite(
                     .access_lists
                     .get(test.indexes.data)
                     .and_then(Option::as_deref)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|item| {
-                        (
-                            item.address,
-                            item.storage_keys
-                                .iter()
-                                .map(|key| U256::from_be_bytes(key.0))
-                                .collect::<Vec<_>>(),
-                        )
-                    })
-                    .collect();
+                    .cloned()
+                    .unwrap_or_default();
 
                 let to = match unit.transaction.to {
-                    Some(add) => TransactTo::Call(add),
-                    None => TransactTo::Create,
+                    Some(add) => TxKind::Call(add),
+                    None => TxKind::Create,
                 };
                 env.tx.transact_to = to;
 
@@ -361,7 +370,7 @@ pub fn execute_test_suite(
                     .build();
                 let mut evm = Evm::builder()
                     .with_db(&mut state)
-                    .modify_env(|e| *e = env.clone())
+                    .modify_env(|e| e.clone_from(&env))
                     .with_spec_id(spec_id)
                     .build();
 
@@ -509,8 +518,12 @@ pub fn run(
                 (prev_idx, test_path)
             };
 
+            let result = execute_test_suite(&test_path, &elapsed, trace, print_outcome);
+
+            // Increment after the test is done.
             console_bar.inc(1);
-            if let Err(err) = execute_test_suite(&test_path, &elapsed, trace, print_outcome) {
+
+            if let Err(err) = result {
                 n_errors.fetch_add(1, Ordering::SeqCst);
                 if !keep_going {
                     return Err(err);

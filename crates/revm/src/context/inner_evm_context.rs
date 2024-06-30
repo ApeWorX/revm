@@ -1,20 +1,21 @@
 use crate::{
     db::Database,
     interpreter::{
-        analysis::to_analysed, gas, return_ok, Contract, CreateInputs, EOFCreateInput, Gas,
+        analysis::{to_analysed, validate_eof},
+        gas, return_ok, Contract, CreateInputs, EOFCreateInputs, EOFCreateKind, Gas,
         InstructionResult, Interpreter, InterpreterResult, LoadAccountResult, SStoreResult,
         SelfDestructResult, MAX_CODE_SIZE,
     },
     journaled_state::JournaledState,
     primitives::{
-        keccak256, Account, Address, AnalysisKind, Bytecode, Bytes, CreateScheme, EVMError, Env,
-        Eof, HashSet, Spec,
+        keccak256, AccessListItem, Account, Address, AnalysisKind, Bytecode, Bytes, CreateScheme,
+        EVMError, Env, Eof, HashSet, Spec,
         SpecId::{self, *},
-        B256, U256,
+        B256, EOF_MAGIC_BYTES, EOF_MAGIC_HASH, U256,
     },
     FrameOrResult, JournalCheckpoint, CALL_STACK_LIMIT,
 };
-use std::boxed::Box;
+use std::{boxed::Box, sync::Arc, vec::Vec};
 
 /// EVM contexts contains data that EVM needs for execution.
 #[derive(Debug)]
@@ -28,6 +29,8 @@ pub struct InnerEvmContext<DB: Database> {
     pub db: DB,
     /// Error that happened during execution.
     pub error: Result<(), EVMError<DB::Error>>,
+    /// EIP-7702 Authorization list of accounts that needs to be cleared.
+    pub valid_authorizations: Vec<Address>,
     /// Used as temporary value holder to store L1 block info.
     #[cfg(feature = "optimism")]
     pub l1_block_info: Option<crate::optimism::L1BlockInfo>,
@@ -43,6 +46,7 @@ where
             journaled_state: self.journaled_state.clone(),
             db: self.db.clone(),
             error: self.error.clone(),
+            valid_authorizations: self.valid_authorizations.clone(),
             #[cfg(feature = "optimism")]
             l1_block_info: self.l1_block_info.clone(),
         }
@@ -56,6 +60,7 @@ impl<DB: Database> InnerEvmContext<DB> {
             journaled_state: JournaledState::new(SpecId::LATEST, HashSet::new()),
             db,
             error: Ok(()),
+            valid_authorizations: Default::default(),
             #[cfg(feature = "optimism")]
             l1_block_info: None,
         }
@@ -69,6 +74,7 @@ impl<DB: Database> InnerEvmContext<DB> {
             journaled_state: JournaledState::new(SpecId::LATEST, HashSet::new()),
             db,
             error: Ok(()),
+            valid_authorizations: Default::default(),
             #[cfg(feature = "optimism")]
             l1_block_info: None,
         }
@@ -84,6 +90,7 @@ impl<DB: Database> InnerEvmContext<DB> {
             journaled_state: self.journaled_state,
             db,
             error: Ok(()),
+            valid_authorizations: Default::default(),
             #[cfg(feature = "optimism")]
             l1_block_info: self.l1_block_info,
         }
@@ -100,9 +107,16 @@ impl<DB: Database> InnerEvmContext<DB> {
     /// Loading of accounts/storages is needed to make them warm.
     #[inline]
     pub fn load_access_list(&mut self) -> Result<(), EVMError<DB::Error>> {
-        for (address, slots) in self.env.tx.access_list.iter() {
-            self.journaled_state
-                .initial_account_load(*address, slots, &mut self.db)?;
+        for AccessListItem {
+            address,
+            storage_keys,
+        } in self.env.tx.access_list.iter()
+        {
+            self.journaled_state.initial_account_load(
+                *address,
+                storage_keys.iter().map(|i| U256::from_be_bytes(i.0)),
+                &mut self.db,
+            )?;
         }
         Ok(())
     }
@@ -114,13 +128,14 @@ impl<DB: Database> InnerEvmContext<DB> {
     }
 
     /// Returns the error by replacing it with `Ok(())`, if any.
+    #[inline]
     pub fn take_error(&mut self) -> Result<(), EVMError<DB::Error>> {
         core::mem::replace(&mut self.error, Ok(()))
     }
 
     /// Fetch block hash from database.
     #[inline]
-    pub fn block_hash(&mut self, number: U256) -> Result<B256, EVMError<DB::Error>> {
+    pub fn block_hash(&mut self, number: u64) -> Result<B256, EVMError<DB::Error>> {
         self.db.block_hash(number).map_err(EVMError::Database)
     }
 
@@ -159,20 +174,36 @@ impl<DB: Database> InnerEvmContext<DB> {
             .map(|(acc, is_cold)| (acc.info.balance, is_cold))
     }
 
-    /// Return account code and if address is cold loaded.
+    /// Return account code bytes and if address is cold loaded.
+    ///
+    /// In case of EOF account it will return `EOF_MAGIC` (0xEF00) as code.
     #[inline]
-    pub fn code(&mut self, address: Address) -> Result<(Bytecode, bool), EVMError<DB::Error>> {
+    pub fn code(&mut self, address: Address) -> Result<(Bytes, bool), EVMError<DB::Error>> {
         self.journaled_state
             .load_code(address, &mut self.db)
-            .map(|(a, is_cold)| (a.info.code.clone().unwrap(), is_cold))
+            .map(|(a, is_cold)| {
+                // SAFETY: safe to unwrap as load_code will insert code if it is empty.
+                let code = a.info.code.as_ref().unwrap();
+                if code.is_eof() {
+                    (EOF_MAGIC_BYTES.clone(), is_cold)
+                } else {
+                    (code.original_bytes().clone(), is_cold)
+                }
+            })
     }
 
     /// Get code hash of address.
+    ///
+    /// In case of EOF account it will return `EOF_MAGIC_HASH`
+    /// (the hash of `0xEF00`).
     #[inline]
     pub fn code_hash(&mut self, address: Address) -> Result<(B256, bool), EVMError<DB::Error>> {
         let (acc, is_cold) = self.journaled_state.load_code(address, &mut self.db)?;
         if acc.is_empty() {
             return Ok((B256::ZERO, is_cold));
+        }
+        if let Some(true) = acc.info.code.as_ref().map(|code| code.is_eof()) {
+            return Ok((EOF_MAGIC_HASH, is_cold));
         }
         Ok((acc.info.code_hash, is_cold))
     }
@@ -228,7 +259,7 @@ impl<DB: Database> InnerEvmContext<DB> {
     pub fn make_eofcreate_frame(
         &mut self,
         spec_id: SpecId,
-        inputs: &EOFCreateInput,
+        inputs: &EOFCreateInputs,
     ) -> Result<FrameOrResult, EVMError<DB::Error>> {
         let return_error = |e| {
             Ok(FrameOrResult::new_eofcreate_result(
@@ -237,9 +268,39 @@ impl<DB: Database> InnerEvmContext<DB> {
                     gas: Gas::new(inputs.gas_limit),
                     output: Bytes::new(),
                 },
-                inputs.created_address,
-                inputs.return_memory_range.clone(),
+                None,
             ))
+        };
+
+        let (input, initcode, created_address) = match &inputs.kind {
+            EOFCreateKind::Opcode {
+                initcode,
+                input,
+                created_address,
+            } => (input.clone(), initcode.clone(), *created_address),
+            EOFCreateKind::Tx { initdata } => {
+                // Use nonce from tx (if set) or from account (if not).
+                // Nonce for call is bumped in deduct_caller
+                // TODO(make this part of nonce increment code)
+                let nonce = self.env.tx.nonce.unwrap_or_else(|| {
+                    let caller = self.env.tx.caller;
+                    self.load_account(caller)
+                        .map(|(a, _)| a.info.nonce)
+                        .unwrap_or_default()
+                });
+
+                // decode eof and init code.
+                let Ok((eof, input)) = Eof::decode_dangling(initdata.clone()) else {
+                    return return_error(InstructionResult::InvalidEOFInitCode);
+                };
+
+                if validate_eof(&eof).is_err() {
+                    // TODO (EOF) new error type.
+                    return return_error(InstructionResult::InvalidEOFInitCode);
+                }
+
+                (input, eof, self.env.tx.caller.create(nonce))
+            }
         };
 
         // Check depth
@@ -263,12 +324,12 @@ impl<DB: Database> InnerEvmContext<DB> {
 
         // Load account so it needs to be marked as warm for access list.
         self.journaled_state
-            .load_account(inputs.created_address, &mut self.db)?;
+            .load_account(created_address, &mut self.db)?;
 
         // create account, transfer funds and make the journal checkpoint.
         let checkpoint = match self.journaled_state.create_account_checkpoint(
             inputs.caller,
-            inputs.created_address,
+            created_address,
             inputs.value,
             spec_id,
         ) {
@@ -279,11 +340,12 @@ impl<DB: Database> InnerEvmContext<DB> {
         };
 
         let contract = Contract::new(
-            Bytes::new(),
+            input.clone(),
             // fine to clone as it is Bytes.
-            Bytecode::Eof(inputs.eof_init_code.clone()),
+            Bytecode::Eof(Arc::new(initcode.clone())),
             None,
-            inputs.created_address,
+            created_address,
+            None,
             inputs.caller,
             inputs.value,
         );
@@ -293,8 +355,7 @@ impl<DB: Database> InnerEvmContext<DB> {
         interpreter.set_is_eof_init();
 
         Ok(FrameOrResult::new_eofcreate_frame(
-            inputs.created_address,
-            inputs.return_memory_range.clone(),
+            created_address,
             checkpoint,
             interpreter,
         ))
@@ -319,6 +380,20 @@ impl<DB: Database> InnerEvmContext<DB> {
             return;
         }
 
+        if interpreter_result.output.len() > MAX_CODE_SIZE {
+            self.journaled_state.checkpoint_revert(journal_checkpoint);
+            interpreter_result.result = InstructionResult::CreateContractSizeLimit;
+            return;
+        }
+
+        // deduct gas for code deployment.
+        let gas_for_code = interpreter_result.output.len() as u64 * gas::CODEDEPOSIT;
+        if !interpreter_result.gas.record_cost(gas_for_code) {
+            self.journaled_state.checkpoint_revert(journal_checkpoint);
+            interpreter_result.result = InstructionResult::OutOfGas;
+            return;
+        }
+
         // commit changes reduces depth by -1.
         self.journaled_state.checkpoint_commit();
 
@@ -328,7 +403,7 @@ impl<DB: Database> InnerEvmContext<DB> {
 
         // eof bytecode is going to be hashed.
         self.journaled_state
-            .set_code(address, Bytecode::Eof(bytecode));
+            .set_code(address, Bytecode::Eof(Arc::new(bytecode)));
     }
 
     /// Make create frame.
@@ -338,14 +413,11 @@ impl<DB: Database> InnerEvmContext<DB> {
         spec_id: SpecId,
         inputs: &CreateInputs,
     ) -> Result<FrameOrResult, EVMError<DB::Error>> {
-        // Prepare crate.
-        let gas = Gas::new(inputs.gas_limit);
-
         let return_error = |e| {
             Ok(FrameOrResult::new_create_result(
                 InterpreterResult {
                     result: e,
-                    gas,
+                    gas: Gas::new(inputs.gas_limit),
                     output: Bytes::new(),
                 },
                 None,
@@ -355,6 +427,12 @@ impl<DB: Database> InnerEvmContext<DB> {
         // Check depth
         if self.journaled_state.depth() > CALL_STACK_LIMIT {
             return return_error(InstructionResult::CallTooDeep);
+        }
+
+        // Prague EOF
+        if spec_id.is_enabled_in(PRAGUE_EOF) && inputs.init_code.get(..2) == Some(&EOF_MAGIC_BYTES)
+        {
+            return return_error(InstructionResult::CreateInitCodeStartingEF00);
         }
 
         // Fetch balance of caller.
@@ -407,6 +485,7 @@ impl<DB: Database> InnerEvmContext<DB> {
             bytecode,
             Some(init_code_hash),
             created_address,
+            None,
             inputs.caller,
             inputs.value,
         );
@@ -414,7 +493,7 @@ impl<DB: Database> InnerEvmContext<DB> {
         Ok(FrameOrResult::new_create_frame(
             created_address,
             checkpoint,
-            Interpreter::new(contract, gas.limit(), false),
+            Interpreter::new(contract, inputs.gas_limit, false),
         ))
     }
 

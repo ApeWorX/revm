@@ -1,9 +1,7 @@
 //! # revm-precompile
 //!
 //! Implementations of EVM precompiled contracts.
-#![warn(rustdoc::all)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
-#![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[macro_use]
@@ -11,6 +9,8 @@
 extern crate alloc as std;
 
 pub mod blake2;
+#[cfg(feature = "blst")]
+pub mod bls12_381;
 pub mod bn128;
 pub mod hash;
 pub mod identity;
@@ -18,6 +18,8 @@ pub mod identity;
 pub mod kzg_point_evaluation;
 pub mod modexp;
 pub mod secp256k1;
+#[cfg(feature = "secp256r1")]
+pub mod secp256r1;
 pub mod utilities;
 
 use core::hash::Hash;
@@ -26,7 +28,7 @@ use once_cell::race::OnceBox;
 pub use revm_primitives as primitives;
 pub use revm_primitives::{
     precompile::{PrecompileError as Error, *},
-    Address, Bytes, HashMap, Log, B256,
+    Address, Bytes, HashMap, HashSet, Log, B256,
 };
 use std::{boxed::Box, vec::Vec};
 
@@ -34,26 +36,12 @@ pub fn calc_linear_cost_u32(len: usize, base: u64, word: u64) -> u64 {
     (len as u64 + 32 - 1) / 32 * word + base
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct PrecompileOutput {
-    pub cost: u64,
-    pub output: Vec<u8>,
-    pub logs: Vec<Log>,
-}
-
-impl PrecompileOutput {
-    pub fn without_logs(cost: u64, output: Vec<u8>) -> Self {
-        Self {
-            cost,
-            output,
-            logs: Vec::new(),
-        }
-    }
-}
 #[derive(Clone, Default, Debug)]
 pub struct Precompiles {
     /// Precompiles.
-    pub inner: HashMap<Address, Precompile>,
+    inner: HashMap<Address, Precompile>,
+    /// Addresses of precompile.
+    addresses: HashSet<Address>,
 }
 
 impl Precompiles {
@@ -65,6 +53,7 @@ impl Precompiles {
             PrecompileSpecId::ISTANBUL => Self::istanbul(),
             PrecompileSpecId::BERLIN => Self::berlin(),
             PrecompileSpecId::CANCUN => Self::cancun(),
+            PrecompileSpecId::PRAGUE => Self::prague(),
             PrecompileSpecId::LATEST => Self::latest(),
         }
     }
@@ -82,6 +71,11 @@ impl Precompiles {
             ]);
             Box::new(precompiles)
         })
+    }
+
+    /// Returns inner HashMap of precompiles.
+    pub fn inner(&self) -> &HashMap<Address, Precompile> {
+        &self.inner
     }
 
     /// Returns precompiles for Byzantium spec.
@@ -108,12 +102,12 @@ impl Precompiles {
         INSTANCE.get_or_init(|| {
             let mut precompiles = Self::byzantium().clone();
             precompiles.extend([
-                // EIP-152: Add BLAKE2 compression function `F` precompile.
-                blake2::FUN,
                 // EIP-1108: Reduce alt_bn128 precompile gas costs.
                 bn128::add::ISTANBUL,
                 bn128::mul::ISTANBUL,
                 bn128::pair::ISTANBUL,
+                // EIP-152: Add BLAKE2 compression function `F` precompile.
+                blake2::FUN,
             ]);
             Box::new(precompiles)
         })
@@ -156,20 +150,38 @@ impl Precompiles {
         })
     }
 
+    /// Returns precompiles for Prague spec.
+    pub fn prague() -> &'static Self {
+        static INSTANCE: OnceBox<Precompiles> = OnceBox::new();
+        INSTANCE.get_or_init(|| {
+            let precompiles = Self::cancun().clone();
+
+            // Don't include BLS12-381 precompiles in no_std builds.
+            #[cfg(feature = "blst")]
+            let precompiles = {
+                let mut precompiles = precompiles;
+                precompiles.extend(bls12_381::precompiles());
+                precompiles
+            };
+
+            Box::new(precompiles)
+        })
+    }
+
     /// Returns the precompiles for the latest spec.
     pub fn latest() -> &'static Self {
-        Self::cancun()
+        Self::prague()
     }
 
     /// Returns an iterator over the precompiles addresses.
     #[inline]
-    pub fn addresses(&self) -> impl Iterator<Item = &Address> {
+    pub fn addresses(&self) -> impl ExactSizeIterator<Item = &Address> {
         self.inner.keys()
     }
 
     /// Consumes the type and returns all precompile addresses.
     #[inline]
-    pub fn into_addresses(self) -> impl Iterator<Item = Address> {
+    pub fn into_addresses(self) -> impl ExactSizeIterator<Item = Address> {
         self.inner.into_keys()
     }
 
@@ -201,11 +213,19 @@ impl Precompiles {
         self.inner.len()
     }
 
+    /// Returns the precompiles addresses as a set.
+    pub fn addresses_set(&self) -> &HashSet<Address> {
+        &self.addresses
+    }
+
     /// Extends the precompiles with the given precompiles.
     ///
     /// Other precompiles with overwrite existing precompiles.
+    #[inline]
     pub fn extend(&mut self, other: impl IntoIterator<Item = PrecompileWithAddress>) {
-        self.inner.extend(other.into_iter().map(Into::into));
+        let items = other.into_iter().collect::<Vec<_>>();
+        self.addresses.extend(items.iter().map(|p| *p.address()));
+        self.inner.extend(items.into_iter().map(Into::into));
     }
 }
 
@@ -224,6 +244,20 @@ impl From<PrecompileWithAddress> for (Address, Precompile) {
     }
 }
 
+impl PrecompileWithAddress {
+    /// Returns reference of address.
+    #[inline]
+    pub fn address(&self) -> &Address {
+        &self.0
+    }
+
+    /// Returns reference of precompile.
+    #[inline]
+    pub fn precompile(&self) -> &Precompile {
+        &self.1
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum PrecompileSpecId {
     HOMESTEAD,
@@ -231,6 +265,7 @@ pub enum PrecompileSpecId {
     ISTANBUL,
     BERLIN,
     CANCUN,
+    PRAGUE,
     LATEST,
 }
 
@@ -245,12 +280,13 @@ impl PrecompileSpecId {
             BYZANTIUM | CONSTANTINOPLE | PETERSBURG => Self::BYZANTIUM,
             ISTANBUL | MUIR_GLACIER => Self::ISTANBUL,
             BERLIN | LONDON | ARROW_GLACIER | GRAY_GLACIER | MERGE | SHANGHAI => Self::BERLIN,
-            CANCUN | PRAGUE => Self::CANCUN,
+            CANCUN => Self::CANCUN,
+            PRAGUE | PRAGUE_EOF => Self::PRAGUE,
             LATEST => Self::LATEST,
             #[cfg(feature = "optimism")]
             BEDROCK | REGOLITH | CANYON => Self::BERLIN,
             #[cfg(feature = "optimism")]
-            ECOTONE => Self::CANCUN,
+            ECOTONE | FJORD => Self::CANCUN,
         }
     }
 }

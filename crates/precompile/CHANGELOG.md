@@ -6,6 +6,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.0.0](https://github.com/bluealloy/revm/compare/revm-precompile-v7.0.0...revm-precompile-v8.0.0) - 2024-06-20
+
+### Added
+- *(precompiles)* fatal error for precompiles ([#1499](https://github.com/bluealloy/revm/pull/1499))
+- add ecAdd to precompile bench ([#1496](https://github.com/bluealloy/revm/pull/1496))
+- *(optimism)* Add secp256r1 precompile for Fjord ([#1436](https://github.com/bluealloy/revm/pull/1436))
+
+### Fixed
+- *(eof)* fixture 2 tests ([#1550](https://github.com/bluealloy/revm/pull/1550))
+- check canonical Fp elements ([#1434](https://github.com/bluealloy/revm/pull/1434))
+- *(precompile)* ignore infinity points in G1 MSM ([#1432](https://github.com/bluealloy/revm/pull/1432))
+- *(precompile)* BLS G2 MSM ([#1428](https://github.com/bluealloy/revm/pull/1428))
+
+### Other
+- avoid cloning precompiles ([#1486](https://github.com/bluealloy/revm/pull/1486))
+- *(precompiles)* Fix some nits in bls12_381 ([#1495](https://github.com/bluealloy/revm/pull/1495))
+- *(deps)* allow multiple versions of secp256k1 ([#1490](https://github.com/bluealloy/revm/pull/1490))
+- *(deps)* bump rstest from 0.19.0 to 0.21.0 ([#1482](https://github.com/bluealloy/revm/pull/1482))
+- *(deps)* bump blst from 0.3.11 to 0.3.12 ([#1481](https://github.com/bluealloy/revm/pull/1481))
+- add test for map_fp_to_g1 precompile ([#1465](https://github.com/bluealloy/revm/pull/1465))
+- add docs for BLS scalar input decoding ([#1446](https://github.com/bluealloy/revm/pull/1446))
+
+## [7.0.0](https://github.com/bluealloy/revm/compare/revm-precompile-v6.0.0...revm-precompile-v7.0.0) - 2024-05-12
+
+### Added
+- *(precompile)* Prague - EIP-2537 - BLS12-381 curve operations ([#1389](https://github.com/bluealloy/revm/pull/1389))
+- *(precompile)* add Prague hardfork specification ([#1387](https://github.com/bluealloy/revm/pull/1387))
+- add flag to force hashbrown usage ([#1284](https://github.com/bluealloy/revm/pull/1284))
+- EOF (Ethereum Object Format) ([#1143](https://github.com/bluealloy/revm/pull/1143))
+
+### Fixed
+- *(precompile)* blst dangling pointers, cleanup ([#1391](https://github.com/bluealloy/revm/pull/1391))
+- *(precompile)* inherit Prague precompiles from Cancun ([#1392](https://github.com/bluealloy/revm/pull/1392))
+
+### Other
+- bump c-kzg to 1.0.2 ([#1390](https://github.com/bluealloy/revm/pull/1390))
+- refactor lints ([#1386](https://github.com/bluealloy/revm/pull/1386))
+- *(deps)* bump aurora-engine-modexp from 1.0.0 to 1.1.0 ([#1339](https://github.com/bluealloy/revm/pull/1339))
+- *(deps)* bump secp256k1 from 0.28.2 to 0.29.0 ([#1260](https://github.com/bluealloy/revm/pull/1260))
+
 ## [6.0.0](https://github.com/bluealloy/revm/compare/revm-precompile-v5.1.0...revm-precompile-v6.0.0) - 2024-04-02
 
 ### Fixed

@@ -2,128 +2,30 @@
 
 pub mod eof_printer;
 
-use crate::{instructions::*, primitives::Spec, Host, Interpreter};
+mod tables;
+pub use tables::{
+    make_boxed_instruction_table, make_instruction_table, update_boxed_instruction,
+    BoxedInstruction, BoxedInstructionTable, DynInstruction, Instruction, InstructionTable,
+    InstructionTables,
+};
+
+use crate::{instructions::*, primitives::Spec, Host};
 use core::{fmt, ptr::NonNull};
-use std::boxed::Box;
 
-/// EVM opcode function signature.
-pub type Instruction<H> = fn(&mut Interpreter, &mut H);
+/// An error indicating that an opcode is invalid.
+#[derive(Debug, PartialEq, Eq)]
+#[cfg(feature = "parse")]
+pub struct OpCodeError(());
 
-/// Instruction table is list of instruction function pointers mapped to
-/// 256 EVM opcodes.
-pub type InstructionTable<H> = [Instruction<H>; 256];
-
-/// EVM opcode function signature.
-pub type BoxedInstruction<'a, H> = Box<dyn Fn(&mut Interpreter, &mut H) + 'a>;
-
-/// A table of instructions.
-pub type BoxedInstructionTable<'a, H> = [BoxedInstruction<'a, H>; 256];
-
-/// Instruction set that contains plain instruction table that contains simple `fn` function pointer.
-/// and Boxed `Fn` variant that contains `Box<dyn Fn()>` function pointer that can be used with closured.
-///
-/// Note that `Plain` variant gives us 10-20% faster Interpreter execution.
-///
-/// Boxed variant can be used to wrap plain function pointer with closure.
-pub enum InstructionTables<'a, H> {
-    Plain(InstructionTable<H>),
-    Boxed(BoxedInstructionTable<'a, H>),
-}
-
-impl<H: Host> InstructionTables<'_, H> {
-    /// Creates a plain instruction table for the given spec.
-    #[inline]
-    pub const fn new_plain<SPEC: Spec>() -> Self {
-        Self::Plain(make_instruction_table::<H, SPEC>())
+#[cfg(feature = "parse")]
+impl fmt::Display for OpCodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("invalid opcode")
     }
 }
 
-impl<'a, H: Host + 'a> InstructionTables<'a, H> {
-    /// Inserts a boxed instruction into the table with the specified index.
-    ///
-    /// This will convert the table into the [BoxedInstructionTable] variant if it is currently a
-    /// plain instruction table, before inserting the instruction.
-    #[inline]
-    pub fn insert_boxed(&mut self, opcode: u8, instruction: BoxedInstruction<'a, H>) {
-        // first convert the table to boxed variant
-        self.convert_boxed();
-
-        // now we can insert the instruction
-        match self {
-            Self::Plain(_) => {
-                unreachable!("we already converted the table to boxed variant");
-            }
-            Self::Boxed(table) => {
-                table[opcode as usize] = Box::new(instruction);
-            }
-        }
-    }
-
-    /// Inserts the instruction into the table with the specified index.
-    #[inline]
-    pub fn insert(&mut self, opcode: u8, instruction: Instruction<H>) {
-        match self {
-            Self::Plain(table) => {
-                table[opcode as usize] = instruction;
-            }
-            Self::Boxed(table) => {
-                table[opcode as usize] = Box::new(instruction);
-            }
-        }
-    }
-
-    /// Converts the current instruction table to a boxed variant. If the table is already boxed,
-    /// this is a no-op.
-    #[inline]
-    pub fn convert_boxed(&mut self) {
-        match self {
-            Self::Plain(table) => {
-                *self = Self::Boxed(core::array::from_fn(|i| {
-                    let instruction: BoxedInstruction<'a, H> = Box::new(table[i]);
-                    instruction
-                }));
-            }
-            Self::Boxed(_) => {}
-        };
-    }
-}
-
-/// Make instruction table.
-#[inline]
-pub const fn make_instruction_table<H: Host + ?Sized, SPEC: Spec>() -> InstructionTable<H> {
-    // Force const-eval of the table creation, making this function trivial.
-    // TODO: Replace this with a `const {}` block once it is stable.
-    struct ConstTable<H: Host + ?Sized, SPEC: Spec> {
-        _host: core::marker::PhantomData<H>,
-        _spec: core::marker::PhantomData<SPEC>,
-    }
-    impl<H: Host + ?Sized, SPEC: Spec> ConstTable<H, SPEC> {
-        const NEW: InstructionTable<H> = {
-            let mut tables: InstructionTable<H> = [control::unknown; 256];
-            let mut i = 0;
-            while i < 256 {
-                tables[i] = instruction::<H, SPEC>(i as u8);
-                i += 1;
-            }
-            tables
-        };
-    }
-    ConstTable::<H, SPEC>::NEW
-}
-
-/// Make boxed instruction table that calls `outer` closure for every instruction.
-#[inline]
-pub fn make_boxed_instruction_table<'a, H, SPEC, FN>(
-    table: InstructionTable<H>,
-    mut outer: FN,
-) -> BoxedInstructionTable<'a, H>
-where
-    H: Host,
-    SPEC: Spec + 'a,
-    FN: FnMut(Instruction<H>) -> BoxedInstruction<'a, H>,
-{
-    core::array::from_fn(|i| outer(table[i]))
-}
+#[cfg(all(feature = "std", feature = "parse"))]
+impl std::error::Error for OpCodeError {}
 
 /// An EVM opcode.
 ///
@@ -144,6 +46,16 @@ impl fmt::Display for OpCode {
     }
 }
 
+#[cfg(feature = "parse")]
+impl core::str::FromStr for OpCode {
+    type Err = OpCodeError;
+
+    #[inline]
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(OpCodeError(()))
+    }
+}
+
 impl OpCode {
     /// Instantiate a new opcode from a u8.
     #[inline]
@@ -152,6 +64,13 @@ impl OpCode {
             Some(_) => Some(Self(opcode)),
             None => None,
         }
+    }
+
+    /// Parses an opcode from a string. This is the inverse of [`as_str`](Self::as_str).
+    #[inline]
+    #[cfg(feature = "parse")]
+    pub fn parse(s: &str) -> Option<Self> {
+        NAME_TO_OPCODE.get(s).copied()
     }
 
     /// Returns true if the opcode is a jump destination.
@@ -213,7 +132,7 @@ impl OpCode {
         Self(opcode)
     }
 
-    /// Returns the opcode as a string.
+    /// Returns the opcode as a string. This is the inverse of [`parse`](Self::parse).
     #[doc(alias = "name")]
     #[inline]
     pub const fn as_str(self) -> &'static str {
@@ -280,6 +199,28 @@ impl OpCode {
     #[inline]
     pub const fn get(self) -> u8 {
         self.0
+    }
+
+    /// Returns true if the opcode modifies memory.
+    /// <https://bluealloy.github.io/revm/crates/interpreter/memory.html#opcodes>
+    /// <https://github.com/crytic/evm-opcodes>
+    #[inline]
+    pub const fn modifies_memory(&self) -> bool {
+        matches!(
+            *self,
+            OpCode::EXTCODECOPY
+                | OpCode::MLOAD
+                | OpCode::MSTORE
+                | OpCode::MSTORE8
+                | OpCode::MCOPY
+                | OpCode::CODECOPY
+                | OpCode::CALLDATACOPY
+                | OpCode::RETURNDATACOPY
+                | OpCode::CALL
+                | OpCode::CALLCODE
+                | OpCode::DELEGATECALL
+                | OpCode::STATICCALL
+        )
     }
 }
 
@@ -416,6 +357,25 @@ pub const fn stack_io(mut op: OpCodeInfo, inputs: u8, outputs: u8) -> OpCodeInfo
 /// Alias for the [`JUMPDEST`] opcode.
 pub const NOP: u8 = JUMPDEST;
 
+/// Callback for creating a [`phf`] map with `stringify_with_cb`.
+#[cfg(feature = "parse")]
+macro_rules! phf_map_cb {
+    ($(#[doc = $s:literal] $id:ident)*) => {
+        phf::phf_map! {
+            $($s => OpCode::$id),*
+        }
+    };
+}
+
+/// Stringifies identifiers with `paste` so that they are available as literals.
+/// This doesn't work with `stringify!` because it cannot be expanded inside of another macro.
+#[cfg(feature = "parse")]
+macro_rules! stringify_with_cb {
+    ($callback:ident; $($id:ident)*) => { paste::paste! {
+        $callback! { $(#[doc = "" $id ""] $id)* }
+    }};
+}
+
 macro_rules! opcodes {
     ($($val:literal => $name:ident => $f:expr => $($modifier:ident $(( $($modifier_arg:expr),* ))?),*);* $(;)?) => {
         // Constants for each opcode. This also takes care of duplicate names.
@@ -428,7 +388,7 @@ macro_rules! opcodes {
             pub const $name: Self = Self($val);
         )*}
 
-        /// Maps each opcode to its name.
+        /// Maps each opcode to its info.
         pub const OPCODE_INFO_JUMPTABLE: [Option<OpCodeInfo>; 256] = {
             let mut map = [None; 256];
             let mut prev: u8 = 0;
@@ -445,6 +405,10 @@ macro_rules! opcodes {
             let _ = prev;
             map
         };
+
+        /// Maps each name to its opcode.
+        #[cfg(feature = "parse")]
+        static NAME_TO_OPCODE: phf::Map<&'static str, OpCode> = stringify_with_cb! { phf_map_cb; $($name)* };
 
         /// Returns the instruction function for the given opcode and spec.
         pub const fn instruction<H: Host + ?Sized, SPEC: Spec>(opcode: u8) -> Instruction<H> {
@@ -527,7 +491,7 @@ opcodes! {
     0x3D => RETURNDATASIZE => system::returndatasize::<H, SPEC> => stack_io(0, 1);
     0x3E => RETURNDATACOPY => system::returndatacopy::<H, SPEC> => stack_io(3, 0);
     0x3F => EXTCODEHASH    => host::extcodehash::<H, SPEC>      => stack_io(1, 1), not_eof;
-    0x40 => BLOCKHASH      => host::blockhash                   => stack_io(1, 1);
+    0x40 => BLOCKHASH      => host::blockhash::<H, SPEC>          => stack_io(1, 1);
     0x41 => COINBASE       => host_env::coinbase                => stack_io(0, 1);
     0x42 => TIMESTAMP      => host_env::timestamp               => stack_io(0, 1);
     0x43 => NUMBER         => host_env::block_number            => stack_io(0, 1);
@@ -704,7 +668,7 @@ opcodes! {
     // 0xEA
     // 0xEB
     0xEC => EOFCREATE       => contract::eofcreate            => stack_io(4, 1), immediate_size(1);
-    0xED => TXCREATE        => contract::txcreate             => stack_io(5, 1);
+    // 0xED
     0xEE => RETURNCONTRACT  => contract::return_contract      => stack_io(2, 0), immediate_size(1), terminating;
     // 0xEF
     0xF0 => CREATE       => contract::create::<false, H, SPEC> => stack_io(3, 1), not_eof;
@@ -714,11 +678,11 @@ opcodes! {
     0xF4 => DELEGATECALL => contract::delegate_call::<H, SPEC> => stack_io(6, 1), not_eof;
     0xF5 => CREATE2      => contract::create::<true, H, SPEC>  => stack_io(4, 1), not_eof;
     // 0xF6
-    0xF7 => RETURNDATALOAD => system::returndataload           => stack_io(1, 1);
-    0xF8 => EXTCALL        => contract::extcall::<H, SPEC>     => stack_io(4, 1);
-    0xF9 => EXFCALL        => contract::extdcall::<H, SPEC>    => stack_io(3, 1);
-    0xFA => STATICCALL     => contract::static_call::<H, SPEC> => stack_io(6, 1), not_eof;
-    0xFB => EXTSCALL       => contract::extscall               => stack_io(3, 1);
+    0xF7 => RETURNDATALOAD  => system::returndataload                => stack_io(1, 1);
+    0xF8 => EXTCALL         => contract::extcall::<H, SPEC>          => stack_io(4, 1);
+    0xF9 => EXTDELEGATECALL => contract::extdelegatecall::<H, SPEC>  => stack_io(3, 1);
+    0xFA => STATICCALL      => contract::static_call::<H, SPEC>      => stack_io(6, 1), not_eof;
+    0xFB => EXTSTATICCALL   => contract::extstaticcall               => stack_io(3, 1);
     // 0xFC
     0xFD => REVERT       => control::revert::<H, SPEC>    => stack_io(2, 0), terminating;
     0xFE => INVALID      => control::invalid              => stack_io(0, 0), terminating;
@@ -837,6 +801,16 @@ mod tests {
                 "Opcode {:?} terminating chack failed.",
                 opcode
             );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "parse")]
+    fn test_parsing() {
+        for i in 0..=u8::MAX {
+            if let Some(op) = OpCode::new(i) {
+                assert_eq!(OpCode::parse(op.as_str()), Some(op));
+            }
         }
     }
 }

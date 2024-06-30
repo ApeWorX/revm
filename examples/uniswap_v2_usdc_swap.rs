@@ -1,4 +1,5 @@
 use alloy_provider::{network::Ethereum, ProviderBuilder, RootProvider};
+use alloy_rpc_types::BlockId;
 use alloy_sol_types::{sol, SolCall, SolValue};
 use alloy_transport_http::Http;
 use anyhow::{anyhow, Result};
@@ -6,7 +7,7 @@ use reqwest::Client;
 use revm::{
     db::{AlloyDB, CacheDB},
     primitives::{
-        address, keccak256, AccountInfo, Address, Bytes, ExecutionResult, Output, TransactTo, U256,
+        address, keccak256, AccountInfo, Address, Bytes, ExecutionResult, Output, TxKind, U256,
     },
     Evm,
 };
@@ -17,15 +18,13 @@ type AlloyCacheDB = CacheDB<AlloyDB<Http<Client>, Ethereum, Arc<RootProvider<Htt
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = ProviderBuilder::new()
-        .on_reqwest_http(
-            "https://mainnet.infura.io/v3/c60b0bb42f8a4c6481ecd229eddaca27"
-                .parse()
-                .unwrap(),
-        )
-        .unwrap();
+    let client = ProviderBuilder::new().on_http(
+        "https://mainnet.infura.io/v3/c60b0bb42f8a4c6481ecd229eddaca27"
+            .parse()
+            .unwrap(),
+    );
     let client = Arc::new(client);
-    let mut cache_db = CacheDB::new(AlloyDB::new(client, None));
+    let mut cache_db = CacheDB::new(AlloyDB::new(client, BlockId::default()));
 
     // Random empty account
     let account = address!("18B06aaF27d44B756FCF16Ca20C1f183EB49111f");
@@ -96,7 +95,7 @@ fn balance_of(token: Address, address: Address, cache_db: &mut AlloyCacheDB) -> 
         .modify_tx_env(|tx| {
             // 0x1 because calling USDC proxy from zero address fails
             tx.caller = address!("0000000000000000000000000000000000000001");
-            tx.transact_to = TransactTo::Call(token);
+            tx.transact_to = TxKind::Call(token);
             tx.data = encoded.into();
             tx.value = U256::from(0);
         })
@@ -140,7 +139,7 @@ async fn get_amount_out(
         .with_db(cache_db)
         .modify_tx_env(|tx| {
             tx.caller = address!("0000000000000000000000000000000000000000");
-            tx.transact_to = TransactTo::Call(uniswap_v2_router);
+            tx.transact_to = TxKind::Call(uniswap_v2_router);
             tx.data = encoded.into();
             tx.value = U256::from(0);
         })
@@ -173,7 +172,7 @@ fn get_reserves(pair_address: Address, cache_db: &mut AlloyCacheDB) -> Result<(U
         .with_db(cache_db)
         .modify_tx_env(|tx| {
             tx.caller = address!("0000000000000000000000000000000000000000");
-            tx.transact_to = TransactTo::Call(pair_address);
+            tx.transact_to = TxKind::Call(pair_address);
             tx.data = encoded.into();
             tx.value = U256::from(0);
         })
@@ -222,7 +221,7 @@ fn swap(
         .with_db(cache_db)
         .modify_tx_env(|tx| {
             tx.caller = from;
-            tx.transact_to = TransactTo::Call(pool_address);
+            tx.transact_to = TxKind::Call(pool_address);
             tx.data = encoded.into();
             tx.value = U256::from(0);
         })
@@ -255,7 +254,7 @@ fn transfer(
         .with_db(cache_db)
         .modify_tx_env(|tx| {
             tx.caller = from;
-            tx.transact_to = TransactTo::Call(token);
+            tx.transact_to = TxKind::Call(token);
             tx.data = encoded.into();
             tx.value = U256::from(0);
         })
